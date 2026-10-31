@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local databases and temporary exports
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.csv
+
+# Local configuration and secrets
+.env
+.streamlit/secrets.toml
+
+# Editors and operating systems
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
