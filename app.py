@@ -104,6 +104,8 @@ with tab_overview:
                     f"Rs. {row['today_price']:,.2f} {row['unit']}" if pd.notna(row["today_price"]) else "Not reported",
                     f"{delta:+,.2f}" if delta is not None else None,
                 )
+                if delta is not None:
+                    col.caption(f"Compared with: {row.get('comparison_label', 'Yesterday')}")
         st.caption("Cards show selected rows from the latest report; use Explore prices to filter the full dataset.")
 
         st.subheader("Latest price changes")
@@ -111,7 +113,7 @@ with tab_overview:
         changes = latest.dropna(subset=["change"]).sort_values("change", ascending=False)
         if not changes.empty:
             st.dataframe(
-                changes[["category", "item_name", "market", "price_type", "yesterday_price", "today_price", "change", "unit"]],
+                changes[["category", "item_name", "market", "price_type", "comparison_label", "yesterday_price", "today_price", "change", "unit"]],
                 use_container_width=True,
                 hide_index=True,
             )
@@ -139,7 +141,7 @@ with tab_explore:
         else:
             line = px.line(hist, x="report_date", y="today_price", markers=True, title=f"{item} · {market} · {price_type}", labels={"report_date": "Report date", "today_price": f"Price ({hist.iloc[0]['unit']})"})
             st.plotly_chart(line, use_container_width=True)
-            st.dataframe(hist[["report_date", "category", "item_name", "market", "price_type", "yesterday_price", "today_price", "unit"]], use_container_width=True, hide_index=True)
+            st.dataframe(hist[["report_date", "category", "item_name", "market", "price_type", "comparison_label", "yesterday_price", "today_price", "unit"]], use_container_width=True, hide_index=True)
 
 with tab_compare:
     if df.empty:

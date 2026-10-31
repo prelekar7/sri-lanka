@@ -83,6 +83,7 @@ def init_db():
             price_type TEXT NOT NULL,       -- wholesale, retail
             yesterday_price REAL,
             today_price REAL,
+            comparison_label TEXT NOT NULL DEFAULT 'Yesterday',
             FOREIGN KEY (report_date) REFERENCES price_reports(report_date),
             UNIQUE(report_date, item_name, market, price_type)
         );
@@ -95,6 +96,16 @@ def init_db():
     if DATABASE_URL:
         schema = schema.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
     conn.executescript(schema)
+    if DATABASE_URL:
+        conn.execute(
+            "ALTER TABLE prices ADD COLUMN IF NOT EXISTS comparison_label TEXT NOT NULL DEFAULT 'Yesterday'"
+        )
+    else:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(prices)").fetchall()}
+        if "comparison_label" not in columns:
+            conn.execute(
+                "ALTER TABLE prices ADD COLUMN comparison_label TEXT NOT NULL DEFAULT 'Yesterday'"
+            )
     conn.commit()
     conn.close()
 
@@ -126,19 +137,20 @@ def insert_report(report_date: date, pdf_url: str, prices: list[dict]):
                 (report_date, pdf_url),
             )
             insert_sql = """INSERT INTO prices
-               (report_date, category, item_name, unit, market, price_type, yesterday_price, today_price)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               (report_date, category, item_name, unit, market, price_type, yesterday_price, today_price, comparison_label)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (report_date, item_name, market, price_type) DO UPDATE SET
                  category = EXCLUDED.category, unit = EXCLUDED.unit,
-                 yesterday_price = EXCLUDED.yesterday_price, today_price = EXCLUDED.today_price"""
+                 yesterday_price = EXCLUDED.yesterday_price, today_price = EXCLUDED.today_price,
+                 comparison_label = EXCLUDED.comparison_label"""
         else:
             conn.execute(
                 "INSERT OR IGNORE INTO price_reports (report_date, pdf_url) VALUES (?, ?)",
                 (report_date, pdf_url)
             )
             insert_sql = """INSERT OR REPLACE INTO prices
-               (report_date, category, item_name, unit, market, price_type, yesterday_price, today_price)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+               (report_date, category, item_name, unit, market, price_type, yesterday_price, today_price, comparison_label)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"""
         conn.executemany(
             insert_sql,
             [
@@ -151,6 +163,7 @@ def insert_report(report_date: date, pdf_url: str, prices: list[dict]):
                     p['price_type'],
                     p.get('yesterday_price'),
                     p.get('today_price'),
+                    p.get('comparison_label', 'Yesterday'),
                 )
                 for p in prices
             ]

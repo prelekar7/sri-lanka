@@ -31,6 +31,34 @@ STANDARD_COLUMNS = [
     ("Dambulla", "retail"),
     ("Narahenpita", "retail"),
 ]
+
+LEGACY_COLUMNS = {
+    "Vegetables": [
+        ("Pettah", "wholesale"), ("Pettah", "retail"),
+        ("Dambulla", "wholesale"), ("Dambulla", "retail"),
+    ],
+    "Other": [
+        ("Pettah", "wholesale"), ("Pettah", "retail"),
+        ("Dambulla", "wholesale"), ("Dambulla", "retail"),
+    ],
+    "Rice": [
+        ("Pettah", "wholesale"), ("Pettah", "retail"),
+        ("Marandagahamula", "wholesale"),
+    ],
+    "Fish": [
+        ("Peliyagoda", "wholesale"), ("Peliyagoda", "retail"),
+        ("Negombo", "wholesale"), ("Negombo", "retail"),
+    ],
+    "Fruits": [("Pettah", "wholesale"), ("Pettah", "retail")],
+}
+
+LEGACY_PRICE_RE = re.compile(
+    r"(?<![\w.])(?:\d\s*,?\s*)?\d{1,3}(?:\s*,\s*\d{3})*\.\d{2}|\bn\.a\.(?!\w)",
+    re.I,
+)
+LEGACY_ROW_RE = re.compile(r"^(.*?)\s+Rs\.?\s*/\s*(kg|Nut|Each|Ltr)\s+(.*)$", re.I)
+
+
 def _parse_price(token: str) -> float | None:
     value = re.sub(r"\s+", "", token).replace(",", "")
     if value.lower().startswith("n.a"):
@@ -39,6 +67,54 @@ def _parse_price(token: str) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def _parse_legacy_pages(pages, report_date: date) -> list[dict]:
+    """Parse the older multi-page table with weekly-average/date pairs."""
+    categories = {re.sub(r"\s+", "", key.upper()): value for key, value in CATEGORY_NAMES.items()}
+    records: list[dict] = []
+    page_fallback = ["Vegetables", "Rice", "Fish", "Fruits", "Other"]
+
+    for page_index, page in enumerate(pages):
+        category = page_fallback[page_index] if page_index < len(page_fallback) else None
+        for raw_line in (page.extract_text() or "").splitlines():
+            line = raw_line.strip()
+            normalized = re.sub(r"\s+", "", line).upper()
+            if normalized in categories:
+                category = categories[normalized]
+                continue
+            if category not in LEGACY_COLUMNS:
+                continue
+            match = LEGACY_ROW_RE.match(line)
+            if not match:
+                continue
+            item, unit, values_text = match.groups()
+            item = re.sub(r"\s+", " ", item).strip()
+            if not item or item.lower() in {"item", "previous", "average"}:
+                continue
+            tokens = LEGACY_PRICE_RE.findall(values_text)
+            columns = LEGACY_COLUMNS[category]
+            tokens = tokens[: 2 * len(columns)]
+            tokens += ["n.a."] * (2 * len(columns) - len(tokens))
+
+            for index, (market, price_type) in enumerate(columns):
+                reference_price = _parse_price(tokens[index * 2])
+                current_price = _parse_price(tokens[index * 2 + 1])
+                if reference_price is None and current_price is None:
+                    continue
+                records.append(
+                    {
+                        "category": category,
+                        "item_name": item,
+                        "unit": f"Rs./{unit}",
+                        "market": market,
+                        "price_type": price_type,
+                        "yesterday_price": reference_price,
+                        "today_price": current_price,
+                        "comparison_label": "Previous 5 Days Average",
+                    }
+                )
+    return records
 
 
 def _report_date_from_text(text: str) -> date | None:
@@ -87,7 +163,10 @@ def parse_pdf(source: str | Path | bytes, report_date: date | None = None) -> li
             if word["text"].lower() in {"yesterday", "today"} and word["top"] < 90
         ][:10]
         if len(date_columns) != 10:
-            raise ValueError("Could not locate the price columns in the PDF table.")
+            legacy_records = _parse_legacy_pages(pdf.pages, report_date)
+            if legacy_records:
+                return legacy_records
+            raise ValueError("Could not locate modern or legacy price columns in the PDF table.")
 
         category = "Other"
         market_overrides: dict[int, str] = {}
@@ -143,6 +222,7 @@ def parse_pdf(source: str | Path | bytes, report_date: date | None = None) -> li
                         "price_type": price_type,
                         "yesterday_price": yesterday,
                         "today_price": today,
+                        "comparison_label": "Yesterday",
                     }
                 )
     if not records:

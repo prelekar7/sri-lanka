@@ -36,7 +36,7 @@ The app creates its tables automatically in PostgreSQL. Never commit `.streamlit
 - **Intelligence:** threshold checks, retail/wholesale spread, and seasonal averages.
 - **Export data:** download observations and the report index as CSV.
 
-The parser reads the detailed table on page 2 and uses PDF column positions to preserve blank market cells. A missing price (`n.a.`) remains empty in the database.
+The parser handles both the newer detailed table and older multi-page reports. Older reports compare the report-day price with a five-day average; this comparison basis is stored and shown explicitly instead of being labelled as yesterday's price. A missing price (`n.a.`) remains empty in the database.
 
 ## Notes
 
